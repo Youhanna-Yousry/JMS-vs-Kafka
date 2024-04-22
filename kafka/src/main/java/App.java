@@ -21,21 +21,7 @@ public class App {
     private static final String MESSAGE_PATH = "src/main/resources/message.txt";
     private static final int NUMBER_OF_MESSAGES = 10000;
 
-    private static byte[] addTimeStamp(byte[] message) {
-        long timestamp = System.currentTimeMillis();
-        byte[] timestampBytes = LongConverter.longToBytes(timestamp);
-        byte[] result = new byte[message.length + timestampBytes.length];
-        System.arraycopy(message, 0, result, 0, message.length);
-        System.arraycopy(timestampBytes, 0, result, message.length, timestampBytes.length);
-        return result;
-    }
-
-    private static long extractTimeStamp(byte[] message) {
-        int messageLength = message.length - Long.SIZE / Byte.SIZE;
-        byte[] timestampBytes = new byte[Long.SIZE / Byte.SIZE];
-        System.arraycopy(message, messageLength, timestampBytes, 0, Long.SIZE / Byte.SIZE);
-        return LongConverter.bytesToLong(timestampBytes);
-    }
+    private static final TimeStamper timeStamper = new TimeStamper();
 
     private static void produce() {
         Properties props = new Properties();
@@ -57,7 +43,7 @@ public class App {
         // create a producer that send the message(key = message id, value = message content) to the topic
         try (Producer<String, byte[]> producer = new KafkaProducer<>(props)) {
             for (int i = 0; i < NUMBER_OF_MESSAGES; i++) {
-                byte[] messageWithTimestamp = addTimeStamp(message);
+                byte[] messageWithTimestamp = timeStamper.addTimeStamp(message);
                 long beforeSend = System.currentTimeMillis();
                 producer.send(new ProducerRecord<>(TOPIC, Integer.toString(i), messageWithTimestamp));
                 totalResponseTime += System.currentTimeMillis() - beforeSend;
@@ -93,7 +79,7 @@ public class App {
                 receivedMessages += records.count();
                 long afterPoll = System.currentTimeMillis();
                 for (var record : records) {
-                    latencies.add(afterPoll - extractTimeStamp(record.value()));
+                    latencies.add(afterPoll - timeStamper.extractTimeStamp(record.value()));
                     totalResponseTime += afterPoll - beforePoll;
                 }
             }
