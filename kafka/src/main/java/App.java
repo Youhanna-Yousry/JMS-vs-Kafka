@@ -21,8 +21,6 @@ public class App {
     private static final String MESSAGE_PATH = "src/main/resources/message.txt";
     private static final int NUMBER_OF_MESSAGES = 10000;
 
-    private static final TimeStamper timeStamper = new TimeStamper();
-
     private static void produce() {
         Properties props = new Properties();
         props.put("bootstrap.servers", BOOTSTRAP_SERVER);
@@ -43,14 +41,14 @@ public class App {
         // create a producer that send the message(key = message id, value = message content) to the topic
         try (Producer<String, byte[]> producer = new KafkaProducer<>(props)) {
             for (int i = 0; i < NUMBER_OF_MESSAGES; i++) {
-                byte[] messageWithTimestamp = timeStamper.addTimeStamp(message);
-                long beforeSend = System.currentTimeMillis();
-                producer.send(new ProducerRecord<>(TOPIC, Integer.toString(i), messageWithTimestamp));
-                totalResponseTime += System.currentTimeMillis() - beforeSend;
+                long beforeSend = System.nanoTime();
+                producer.send(new ProducerRecord<>(TOPIC, null, System.nanoTime(), Integer.toString(i), message));
+                producer.flush();
+                totalResponseTime += System.nanoTime() - beforeSend;
             }
         }
 
-        System.out.println("Average response time for producer: " + (double) totalResponseTime / NUMBER_OF_MESSAGES + " ms");
+        System.out.println("Average response time for producer: " + (double) totalResponseTime / NUMBER_OF_MESSAGES / 1e6 + " ms");
     }
 
     private static void consume() {
@@ -74,30 +72,38 @@ public class App {
         try (Consumer<String, byte[]> consumer = new KafkaConsumer<>(props)) {
             consumer.subscribe(List.of(TOPIC));
             while (receivedMessages < NUMBER_OF_MESSAGES) {
-                long beforePoll = System.currentTimeMillis();
+                long beforePoll = System.nanoTime();
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1000));
                 receivedMessages += records.count();
-                long afterPoll = System.currentTimeMillis();
+                long afterPoll = System.nanoTime();
                 for (var record : records) {
-                    latencies.add(afterPoll - timeStamper.extractTimeStamp(record.value()));
+                    latencies.add(afterPoll - record.timestamp());
                     totalResponseTime += afterPoll - beforePoll;
                 }
             }
         }
 
-
         Collections.sort(latencies);
 
-        System.out.println("Average response time for consumer: " + (double) totalResponseTime / NUMBER_OF_MESSAGES + " ms");
-        System.out.println("Median latency: " + latencies.get(latencies.size() / 2) + " ms");
+        System.out.println("Average response time for consumer: " + (double) totalResponseTime / NUMBER_OF_MESSAGES / 1e6 + " ms");
+        if (latencies.size() % 2 == 0) {
+            System.out.println("Median latency: " + (latencies.get(latencies.size() / 2) + latencies.get(latencies.size() / 2 - 1)) / 2 / 1e6 + " ms");
+        } else {
+            System.out.println("Median latency: " + latencies.get(latencies.size() / 2) / 1e6 + " ms");
+        }
     }
 
-    public static void main(String[] args) {
-        Thread consumerThread = new Thread(App::consume);
-        consumerThread.start();
-
+    public static void main(String[] args) throws Exception {
         Thread producerThread = new Thread(App::produce);
+        Thread consumerThread = new Thread(App::consume);
+
+        // Start producer and consumer threads
+        consumerThread.start();
         producerThread.start();
+
+        // Wait for producer and consumer threads to finish
+        consumerThread.join();
+        producerThread.join();
     }
 
 }
