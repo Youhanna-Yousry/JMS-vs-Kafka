@@ -1,0 +1,1 @@
+/Users/youhannayousry/University/4/Spring/Data-Intensive/Submissions/Labs/Lab4/kafka/src/main/resources/message.txt
